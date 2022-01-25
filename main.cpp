@@ -39,11 +39,11 @@ void loadModel()
     //****** Get input tensor
     Input = (TF_Output *)malloc(sizeof(TF_Output) * NumInputs);
 
-    TF_Output t0 = {TF_GraphOperationByName(Graph, "serving_default_input_1"), 0};
+    TF_Output t0 = {TF_GraphOperationByName(Graph, "serving_default_flatten_input"), 0};
     if (t0.oper == NULL)
-        printf("ERROR: Failed TF_GraphOperationByName serving_default_input_1\n");
+        printf("ERROR: Failed TF_GraphOperationByName\n");
     else
-        printf("TF_GraphOperationByName serving_default_input_1 is OK\n");
+        printf("TF_GraphOperationByName is OK\n");
 
     Input[0] = t0;
 
@@ -61,14 +61,18 @@ void loadModel()
 
 void pipeline(cv::Mat img)
 {
-    float data[INPUT_WIDTH][INPUT_HEIGHT];
-    for (int y = 0; y < INPUT_HEIGHT; y++)
-    {
-        for (int x = 0; x < INPUT_WIDTH; x++)
-        {
-            data[x][y] = static_cast<float>(img.at<float>(y, x));
-        }
-    }
+    // float *data = new float(INPUT_WIDTH * INPUT_HEIGHT);
+    // int index = 0;
+    // for (int y = 0; y < INPUT_HEIGHT; y++)
+    // {
+    //     for (int x = 0; x < INPUT_WIDTH; x++)
+    //     {
+    //         data[index] = static_cast<float>(img.at<float>(y, x));
+    //         printf("%.2f, ", data[index]);
+    //         index++;
+    //     }
+    // }
+    // printf("\n");
 
     //********* Allocate data for inputs & outputs
     TF_Tensor **InputValues = (TF_Tensor **)malloc(sizeof(TF_Tensor *) * NumInputs);
@@ -78,7 +82,8 @@ void pipeline(cv::Mat img)
     int64_t dims[] = {1, INPUT_WIDTH, INPUT_HEIGHT};
     int ndata = sizeof(float) * INPUT_WIDTH * INPUT_HEIGHT; // This is tricky, it number of bytes not number of element
 
-    TF_Tensor *in_tensor = TF_NewTensor(TF_FLOAT, dims, ndims, data, ndata, &NoOpDeallocator, 0);
+    TF_Tensor *in_tensor = TF_NewTensor(TF_FLOAT, dims, ndims, img.data, ndata, &NoOpDeallocator, 0);
+
     if (in_tensor != NULL)
         printf("TF_NewTensor is OK\n");
     else
@@ -86,9 +91,8 @@ void pipeline(cv::Mat img)
 
     InputValues[0] = in_tensor;
 
-    // //Run the Session
+    // Run the Session
     TF_SessionRun(Session, NULL, Input, InputValues, NumInputs, Output, OutputValues, NumOutputs, NULL, 0, NULL, Status);
-
     if (TF_GetCode(Status) == TF_OK)
     {
         printf("Session is OK\n");
@@ -98,23 +102,32 @@ void pipeline(cv::Mat img)
         printf("%s", TF_Message(Status));
     }
 
-    // //Free memory
+    // Free memory
     TF_DeleteGraph(Graph);
     TF_DeleteSession(Session, Status);
     TF_DeleteSessionOptions(SessionOpts);
     TF_DeleteStatus(Status);
+
+    void *buff = TF_TensorData(OutputValues[0]);
+    float *offsets = (float *)buff;
+    printf("Result Tensor :\n");
+    for (int i = 0; i < 10; i++)
+    {
+        printf("%f\n", offsets[i]);
+    }
 }
 
 int main()
 {
     printf("+++\n");
 
-    char *file = "../images/six.jpg";
+    char *file = "../images/three.jpg";
     cv::Mat img = cv::imread(file, 1);
 
-    cv::cvtColor(img, img, cv::COLOR_BGR2GRAY);
+    // cv::cvtColor(img, img, cv::COLOR_BGR2GRAY);
     cv::resize(img, img, cv::Size(28, 28), 0, 0, cv::INTER_LINEAR);
-    printf("%d\n", img.channels());
+    img.convertTo(img, CV_32FC1);
+    img = img / 255;
 
     // cv::namedWindow("Preview", cv::WINDOW_AUTOSIZE);
     // cv::imshow("Preview", img);
