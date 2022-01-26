@@ -14,7 +14,7 @@ void NoOpDeallocator(void *data, size_t a, void *b) {}
 struct TF_Operation
 {
     std::string name;
-    unsigned int index;
+    int index;
 };
 
 class TF_SavedModel
@@ -23,8 +23,8 @@ public:
     float *output;
 
     TF_SavedModel(const char *dir, const char *t,
-                  unsigned int numInDim, uint64_t *inDim, unsigned int dataSize,
-                  unsigned int numOutDim, uint64_t *outDim,
+                  unsigned int numInDim, int64_t *inDim, unsigned int dataSize,
+                  unsigned int numOutDim, int64_t *outDim,
                   std::vector<TF_Operation> inputOpNames, std::vector<TF_Operation> outputOpNames) : m_saved_model_dir(dir),
                                                                                                      m_tags(t),
                                                                                                      m_numInDim(numInDim),
@@ -36,14 +36,14 @@ public:
         m_numInput = m_inputOpNames.size();
         m_numOutput = m_outputOpNames.size();
 
-        m_inDim = new int64_t(numInDim);
+        m_inDim = new int64_t[numInDim];
+        for (int i = 0; i < numInDim; i++)
+            m_inDim[i] = inDim[i];
+
         int count = 1;
         for (unsigned int i = 0; i < numOutDim; i++)
             count *= outDim[i];
         output = new float(count);
-
-        for (unsigned int i = 0; i < numInDim; i++)
-            m_inDim[i] = inDim[i];
     }
 
     ~TF_SavedModel()
@@ -59,7 +59,6 @@ public:
     {
         Graph = TF_NewGraph();
         Status = TF_NewStatus();
-
         SessionOpts = TF_NewSessionOptions();
         TF_Buffer *RunOpts = NULL;
 
@@ -67,10 +66,9 @@ public:
         Session = TF_LoadSessionFromSavedModel(SessionOpts, RunOpts, m_saved_model_dir, &m_tags, ntags, Graph, NULL, Status);
         if (!TF_GetCode(Status) == TF_OK)
         {
-            printf("%s", TF_Message(Status));
+            printf("Error:%s", TF_Message(Status));
             return -1;
         }
-
         //****** Get input tensor
         Input = (TF_Output *)malloc(sizeof(TF_Output) * m_numInput);
         for (int i = 0; i < m_inputOpNames.size(); i++)
@@ -78,7 +76,7 @@ public:
             TF_Output t0 = {TF_GraphOperationByName(Graph, m_inputOpNames[i].name.c_str()), m_inputOpNames[i].index};
             if (t0.oper == NULL)
             {
-                printf("ERROR: Failed TF_GraphOperationByName: %s\n", m_inputOpNames[i]);
+                printf("ERROR: Failed TF_GraphOperationByName: %s\n", m_inputOpNames[i].name.c_str());
                 return -1;
             }
             Input[i] = t0;
@@ -91,7 +89,7 @@ public:
             TF_Output t2 = {TF_GraphOperationByName(Graph, m_outputOpNames[i].name.c_str()), m_outputOpNames[i].index};
             if (t2.oper == NULL)
             {
-                printf("ERROR: Failed TF_GraphOperationByName: %s\n", m_outputOpNames[i]);
+                printf("ERROR: Failed TF_GraphOperationByName: %s\n", m_outputOpNames[i].name.c_str());
                 return -2;
             }
             Output[i] = t2;
@@ -106,7 +104,7 @@ public:
         TF_Tensor **InputValues = (TF_Tensor **)malloc(sizeof(TF_Tensor *) * m_numInput);
         TF_Tensor **OutputValues = (TF_Tensor **)malloc(sizeof(TF_Tensor *) * m_numOutput);
 
-        TF_Tensor *in_tensor = TF_NewTensor(TF_FLOAT, m_inDim, m_numInDim, img.data, m_dataSize, &NoOpDeallocator, 0);
+        TF_Tensor *in_tensor = TF_NewTensor(TF_UINT8, m_inDim, m_numInDim, img.data, m_dataSize, &NoOpDeallocator, 0);
 
         if (in_tensor == NULL)
         {
@@ -126,8 +124,9 @@ public:
 
         // TODO: how to parse output dimensions
         float *buff = (float *)TF_TensorData(OutputValues[0]);
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 1; i++)
             output[i] = buff[i];
+        printf("%.2f, %.2f\n", (*buff), *(buff + 1));
 
         return 0;
     }
@@ -173,10 +172,51 @@ void softmax(float *input, size_t size)
         input[i] = exp(input[i] - constant);
 }
 
+void cvPreview(cv::Mat img)
+{
+    cv::namedWindow("Preview", cv::WINDOW_AUTOSIZE);
+    cv::imshow("Preview", img);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+}
+
 int main()
 {
     printf("+++\n");
+    const char *file = "../images/kite.jpg";
+    cv::Mat img = cv::imread(file, 1);
 
+    cv::resize(img, img, cv::Size(320, 320), 0, 0, cv::INTER_LINEAR);
+
+    cvPreview(img);
+
+    int64_t in[] = {1, 320, 320, 3};
+    int64_t out[] = {1};
+    unsigned int dataSize = sizeof(uint8_t) * 320 * 320 * 3;
+    std::vector<TF_Operation> inputOpNames = {{"serving_default_input_tensor", 0}};
+    std::vector<TF_Operation> outputOpNames = {{"StatefulPartitionedCall", 5}};
+    TF_SavedModel *tfModel = new TF_SavedModel("ssd_mobilenet_v2_320x320/saved_model", "serve", 4, in, dataSize, 1, out, inputOpNames, outputOpNames);
+
+    int ret = 0;
+    tfModel->loadModel();
+    if (ret > 0)
+    {
+        printf("Load model failed:%d\n", ret);
+        return ret;
+    }
+
+    tfModel->pipeline(img);
+    if (ret > 0)
+    {
+        printf("Pipeline failed:%d\n", ret);
+        return ret;
+    }
+
+    printf("Result:%.2f", tfModel->output[0]);
+}
+
+int _main()
+{
     const char *file = "../images/three_hand.png";
     cv::Mat img = cv::imread(file, 1);
 
@@ -188,8 +228,8 @@ int main()
     // cv::imshow("Preview", img);
     // cv::waitKey(0);
 
-    uint64_t in[] = {1, INPUT_WIDTH, INPUT_HEIGHT};
-    uint64_t out[] = {1, 10};
+    int64_t in[] = {1, INPUT_WIDTH, INPUT_HEIGHT};
+    int64_t out[] = {1, 10};
     unsigned int dataSize = sizeof(float) * INPUT_WIDTH * INPUT_HEIGHT;
     std::vector<TF_Operation> inputOpNames = {{"serving_default_flatten_input", 0}};
     std::vector<TF_Operation> outputOpNames = {{"StatefulPartitionedCall", 0}};
@@ -217,6 +257,5 @@ int main()
             max = i;
     printf("result: %d\n", max);
 
-    printf("---\n");
     return 0;
 }

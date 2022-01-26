@@ -1,3 +1,4 @@
+cmake_minimum_required(VERSION 3.16)
 project(tf CXX)
 
 include_directories("/home/hedgehao/bin/prebuilt/tensorflow/linux/2.6.0/include")
