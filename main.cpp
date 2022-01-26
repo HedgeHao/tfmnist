@@ -6,8 +6,8 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include "tensorflow/c/c_api.h"
 
-#define INPUT_WIDTH 28
-#define INPUT_HEIGHT 28
+#define INPUT_WIDTH 300
+#define INPUT_HEIGHT 300
 
 void NoOpDeallocator(void *data, size_t a, void *b) {}
 
@@ -124,9 +124,13 @@ public:
 
         // TODO: how to parse output dimensions
         float *buff = (float *)TF_TensorData(OutputValues[0]);
-        for (int i = 0; i < 1; i++)
+        printf("Model Output:");
+        for (int i = 0; i < 20; i++)
+        {
+            printf("%.2f, ", buff[i]);
             output[i] = buff[i];
-        printf("%.2f, %.2f\n", (*buff), *(buff + 1));
+        }
+        // printf("%d\n", (*buff));
 
         return 0;
     }
@@ -186,16 +190,16 @@ int main()
     const char *file = "../images/kite.jpg";
     cv::Mat img = cv::imread(file, 1);
 
-    cv::resize(img, img, cv::Size(320, 320), 0, 0, cv::INTER_LINEAR);
+    cv::resize(img, img, cv::Size(INPUT_WIDTH, INPUT_HEIGHT), 0, 0, cv::INTER_LINEAR);
 
-    cvPreview(img);
+    // cvPreview(img);
 
-    int64_t in[] = {1, 320, 320, 3};
+    int64_t in[] = {1, INPUT_WIDTH, INPUT_HEIGHT, 3};
     int64_t out[] = {1};
-    unsigned int dataSize = sizeof(uint8_t) * 320 * 320 * 3;
+    unsigned int dataSize = sizeof(uint8_t) * INPUT_WIDTH * INPUT_HEIGHT * 3;
     std::vector<TF_Operation> inputOpNames = {{"serving_default_input_tensor", 0}};
     std::vector<TF_Operation> outputOpNames = {{"StatefulPartitionedCall", 5}};
-    TF_SavedModel *tfModel = new TF_SavedModel("ssd_mobilenet_v2_320x320/saved_model", "serve", 4, in, dataSize, 1, out, inputOpNames, outputOpNames);
+    TF_SavedModel *tfModel = new TF_SavedModel("ssd_mobilenet_v2_320x320/saved_model", "serve", 4, in, dataSize, 2, out, inputOpNames, outputOpNames);
 
     int ret = 0;
     tfModel->loadModel();
