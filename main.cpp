@@ -18,7 +18,7 @@ TF_Status *Status;
 int NumInputs = 1;
 int NumOutputs = 1;
 
-void loadModel()
+int loadModel(const char *saved_model_dir, const char *tags)
 {
     Graph = TF_NewGraph();
     Status = TF_NewStatus();
@@ -26,15 +26,14 @@ void loadModel()
     SessionOpts = TF_NewSessionOptions();
     TF_Buffer *RunOpts = NULL;
 
-    const char *saved_model_dir = "mnist_saved_model/"; // Path of the model
-    const char *tags = "serve";                         // default model serving tag; can change in future
     int ntags = 1;
 
     Session = TF_LoadSessionFromSavedModel(SessionOpts, RunOpts, saved_model_dir, &tags, ntags, Graph, NULL, Status);
-    if (TF_GetCode(Status) == TF_OK)
-        printf("TF_LoadSessionFromSavedModel OK\n");
-    else
+    if (!TF_GetCode(Status) == TF_OK)
+    {
         printf("%s", TF_Message(Status));
+        return -1;
+    }
 
     //****** Get input tensor
     Input = (TF_Output *)malloc(sizeof(TF_Output) * NumInputs);
@@ -59,21 +58,8 @@ void loadModel()
     Output[0] = t2;
 }
 
-void pipeline(cv::Mat img)
+void pipeline(cv::Mat img, float *output)
 {
-    // float *data = new float(INPUT_WIDTH * INPUT_HEIGHT);
-    // int index = 0;
-    // for (int y = 0; y < INPUT_HEIGHT; y++)
-    // {
-    //     for (int x = 0; x < INPUT_WIDTH; x++)
-    //     {
-    //         data[index] = static_cast<float>(img.at<float>(y, x));
-    //         printf("%.2f, ", data[index]);
-    //         index++;
-    //     }
-    // }
-    // printf("\n");
-
     //********* Allocate data for inputs & outputs
     TF_Tensor **InputValues = (TF_Tensor **)malloc(sizeof(TF_Tensor *) * NumInputs);
     TF_Tensor **OutputValues = (TF_Tensor **)malloc(sizeof(TF_Tensor *) * NumOutputs);
@@ -108,12 +94,38 @@ void pipeline(cv::Mat img)
     TF_DeleteSessionOptions(SessionOpts);
     TF_DeleteStatus(Status);
 
-    void *buff = TF_TensorData(OutputValues[0]);
-    float *offsets = (float *)buff;
-    printf("Result Tensor :\n");
+    float *buff = (float *)TF_TensorData(OutputValues[0]);
     for (int i = 0; i < 10; i++)
+        output[i] = buff[i];
+}
+
+void softmax(float *input, size_t size)
+{
+
+    assert(0 <= size <= sizeof(input) / sizeof(double));
+
+    int i;
+    double m, sum, constant;
+
+    m = -INFINITY;
+    for (i = 0; i < size; ++i)
     {
-        printf("%f\n", offsets[i]);
+        if (m < input[i])
+        {
+            m = input[i];
+        }
+    }
+
+    sum = 0.0;
+    for (i = 0; i < size; ++i)
+    {
+        sum += exp(input[i] - m);
+    }
+
+    constant = m + log(sum);
+    for (i = 0; i < size; ++i)
+    {
+        input[i] = exp(input[i] - constant);
     }
 }
 
@@ -121,7 +133,7 @@ int main()
 {
     printf("+++\n");
 
-    char *file = "../images/three.jpg";
+    char *file = "../images/three_hand.png";
     cv::Mat img = cv::imread(file, 1);
 
     // cv::cvtColor(img, img, cv::COLOR_BGR2GRAY);
@@ -133,8 +145,18 @@ int main()
     // cv::imshow("Preview", img);
     // cv::waitKey(0);
 
-    loadModel();
-    pipeline(img);
+    loadModel("mnist_saved_model", "serve");
+    float *output = new float[10];
+    pipeline(img, output);
+    softmax(output, 10);
+
+    int max = 0;
+    for (int i = 0; i < 10; i++)
+    {
+        if (output[i] > output[max])
+            max = i;
+    }
+    printf("result: %d\n", max);
 
     printf("---\n");
     return 0;
