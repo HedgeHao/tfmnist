@@ -19,8 +19,8 @@ public:
     float *output;
 
     TF_SavedModel(const char *dir, const char *t,
-                  unsigned int numInDim, uint64_t *inDim,
-                  unsigned int dataSize, unsigned int numOutDim, uint64_t *outDim,
+                  unsigned int numInDim, uint64_t *inDim, unsigned int dataSize,
+                  unsigned int numOutDim, uint64_t *outDim,
                   std::vector<const char *> inputOpNames, std::vector<const char *> outputOpNames) : m_saved_model_dir(dir),
                                                                                                      m_tags(t),
                                                                                                      m_numInDim(numInDim),
@@ -60,7 +60,6 @@ public:
         TF_Buffer *RunOpts = NULL;
 
         int ntags = 1;
-
         Session = TF_LoadSessionFromSavedModel(SessionOpts, RunOpts, m_saved_model_dir, &m_tags, ntags, Graph, NULL, Status);
         if (!TF_GetCode(Status) == TF_OK)
         {
@@ -75,7 +74,7 @@ public:
             TF_Output t0 = {TF_GraphOperationByName(Graph, m_inputOpNames[i]), 0};
             if (t0.oper == NULL)
             {
-                printf("ERROR: Failed TF_GraphOperationByName\n");
+                printf("ERROR: Failed TF_GraphOperationByName: %s\n", m_inputOpNames[i]);
                 return -1;
             }
             Input[i] = t0;
@@ -88,7 +87,7 @@ public:
             TF_Output t2 = {TF_GraphOperationByName(Graph, m_outputOpNames[i]), 0};
             if (t2.oper == NULL)
             {
-                printf("ERROR: Failed TF_GraphOperationByName StatefulPartitionedCall\n");
+                printf("ERROR: Failed TF_GraphOperationByName: %s\n", m_outputOpNames[i]);
                 return -2;
             }
             Output[i] = t2;
@@ -177,7 +176,6 @@ int main()
     const char *file = "../images/three_hand.png";
     cv::Mat img = cv::imread(file, 1);
 
-    // cv::cvtColor(img, img, cv::COLOR_BGR2GRAY);
     cv::resize(img, img, cv::Size(28, 28), 0, 0, cv::INTER_LINEAR);
     img.convertTo(img, CV_32FC1);
     img = img / 255;
