@@ -1,5 +1,6 @@
 #include <iostream>
 #include <vector>
+#include <map>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -8,10 +9,13 @@
 #define INPUT_WIDTH 28
 #define INPUT_HEIGHT 28
 
-int NumInputs = 1;
-int NumOutputs = 1;
-
 void NoOpDeallocator(void *data, size_t a, void *b) {}
+
+struct TF_Operation
+{
+    std::string name;
+    unsigned int index;
+};
 
 class TF_SavedModel
 {
@@ -21,7 +25,7 @@ public:
     TF_SavedModel(const char *dir, const char *t,
                   unsigned int numInDim, uint64_t *inDim, unsigned int dataSize,
                   unsigned int numOutDim, uint64_t *outDim,
-                  std::vector<const char *> inputOpNames, std::vector<const char *> outputOpNames) : m_saved_model_dir(dir),
+                  std::vector<TF_Operation> inputOpNames, std::vector<TF_Operation> outputOpNames) : m_saved_model_dir(dir),
                                                                                                      m_tags(t),
                                                                                                      m_numInDim(numInDim),
                                                                                                      m_dataSize(dataSize),
@@ -71,7 +75,7 @@ public:
         Input = (TF_Output *)malloc(sizeof(TF_Output) * m_numInput);
         for (int i = 0; i < m_inputOpNames.size(); i++)
         {
-            TF_Output t0 = {TF_GraphOperationByName(Graph, m_inputOpNames[i]), 0};
+            TF_Output t0 = {TF_GraphOperationByName(Graph, m_inputOpNames[i].name.c_str()), m_inputOpNames[i].index};
             if (t0.oper == NULL)
             {
                 printf("ERROR: Failed TF_GraphOperationByName: %s\n", m_inputOpNames[i]);
@@ -84,7 +88,7 @@ public:
         Output = (TF_Output *)malloc(sizeof(TF_Output) * m_numOutput);
         for (int i = 0; i < m_outputOpNames.size(); i++)
         {
-            TF_Output t2 = {TF_GraphOperationByName(Graph, m_outputOpNames[i]), 0};
+            TF_Output t2 = {TF_GraphOperationByName(Graph, m_outputOpNames[i].name.c_str()), m_outputOpNames[i].index};
             if (t2.oper == NULL)
             {
                 printf("ERROR: Failed TF_GraphOperationByName: %s\n", m_outputOpNames[i]);
@@ -144,8 +148,8 @@ private:
     unsigned int m_numOutput;
     const char *m_saved_model_dir;
     const char *m_tags;
-    std::vector<const char *> m_inputOpNames;
-    std::vector<const char *> m_outputOpNames;
+    std::vector<TF_Operation> m_inputOpNames;
+    std::vector<TF_Operation> m_outputOpNames;
 };
 
 void softmax(float *input, size_t size)
@@ -187,8 +191,8 @@ int main()
     uint64_t in[] = {1, INPUT_WIDTH, INPUT_HEIGHT};
     uint64_t out[] = {1, 10};
     unsigned int dataSize = sizeof(float) * INPUT_WIDTH * INPUT_HEIGHT;
-    std::vector<const char *> inputOpNames = {"serving_default_flatten_input"};
-    std::vector<const char *> outputOpNames = {"StatefulPartitionedCall"};
+    std::vector<TF_Operation> inputOpNames = {{"serving_default_flatten_input", 0}};
+    std::vector<TF_Operation> outputOpNames = {{"StatefulPartitionedCall", 0}};
     TF_SavedModel *tfModel = new TF_SavedModel("mnist_saved_model", "serve", 3, in, dataSize, 2, out, inputOpNames, outputOpNames);
 
     int ret = 0;
