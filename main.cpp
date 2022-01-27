@@ -6,8 +6,8 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include "tensorflow/c/c_api.h"
 
-#define MNIST
-// #define MOBILENET
+// #define MNIST
+#define MOBILENET
 
 #ifdef MNIST
 #define INPUT_WIDTH 28
@@ -15,6 +15,7 @@
 #endif
 
 #ifdef MOBILENET
+#include "coco_classes.h"
 #define INPUT_WIDTH 300
 #define INPUT_HEIGHT 300
 #endif
@@ -29,14 +30,13 @@ public:
     int index;
     int *outDim;
     int numDim;
+    uint64_t outDataSize = 1;
 
     TF_Operation_Wrapper(std::string n, int i, int dim[], int nd) : name(n), index(i), outDim(dim), numDim(nd)
     {
-        int count = 1;
         for (int i = 0; i < numDim; i++)
-            count *= outDim[i];
-        printf("Count:%d\n", count);
-        output = new float[count];
+            outDataSize *= outDim[i];
+        output = new float[outDataSize];
     }
 };
 
@@ -120,7 +120,7 @@ public:
         TF_Tensor **InputValues = (TF_Tensor **)malloc(sizeof(TF_Tensor *) * m_numInput);
         TF_Tensor **OutputValues = (TF_Tensor **)malloc(sizeof(TF_Tensor *) * m_numOutput);
 
-        TF_Tensor *in_tensor = TF_NewTensor(TF_FLOAT, m_inDim, m_numInDim, img.data, m_dataSize, &NoOpDeallocator, 0);
+        TF_Tensor *in_tensor = TF_NewTensor(TF_UINT8, m_inDim, m_numInDim, img.data, m_dataSize, &NoOpDeallocator, 0);
 
         if (in_tensor == NULL)
         {
@@ -141,16 +141,13 @@ public:
         // TODO: how to parse output dimensions
         for (int i = 0; i < m_numOutput; i++)
         {
-            printf("Model Output [%d->%d]: ", i, m_outputOpNames[i]->numDim);
-            float *buff = (float *)TF_TensorData(OutputValues[0]);
+            printf("Model Output [%d (%ld)]: ", i, m_outputOpNames[i]->outDataSize);
+            float *buff = (float *)TF_TensorData(OutputValues[i]);
             int index = 0;
-            for (int j = 1; j < m_outputOpNames[i]->numDim; j++)
+            for (int j = 0; j < m_outputOpNames[i]->outDataSize; j++)
             {
-                for (int x = 0; x < m_outputOpNames[i]->outDim[j]; x++)
-                {
-                    printf("%.2f, ", *buff);
-                    m_outputOpNames[i]->output[index++] = *buff++;
-                }
+                printf("%.2f, ", *buff);
+                m_outputOpNames[i]->output[index++] = *buff++;
             }
             printf("\n");
         }
@@ -175,6 +172,10 @@ private:
     const char *m_tags;
     std::vector<TF_Operation_Wrapper *> m_inputOpNames;
     std::vector<TF_Operation_Wrapper *> m_outputOpNames;
+
+    void test()
+    {
+    }
 };
 
 void softmax(float *input, size_t size)
@@ -219,11 +220,14 @@ int main()
     // cvPreview(img);
 
     int64_t in[] = {1, INPUT_WIDTH, INPUT_HEIGHT, 3};
-    int64_t out[] = {1, 100};
     unsigned int dataSize = sizeof(uint8_t) * INPUT_WIDTH * INPUT_HEIGHT * 3;
-    std::vector<TF_Operation> inputOpNames = {TF_Operation_Wrapper("serving_default_input_tensor", 0, {})};
-    std::vector<TF_Operation> outputOpNames = {TF_Operation_Wrapper("StatefulPartitionedCall", 5, {1}), TF_Operation("StatefulPartitionedCall", 4, {1, 100})};
-    TF_SavedModel *tfModel = new TF_SavedModel("ssd_mobilenet_v2_320x320/saved_model", "serve", 4, in, dataSize, 2, out, inputOpNames, outputOpNames);
+    std::vector<TF_Operation_Wrapper *> inputOpNames = {new TF_Operation_Wrapper("serving_default_input_tensor", 0, {}, 0)};
+    std::vector<TF_Operation_Wrapper *> outputOpNames = {
+        new TF_Operation_Wrapper("StatefulPartitionedCall", 5, new int[2]{1}, 1),
+        new TF_Operation_Wrapper("StatefulPartitionedCall", 4, new int[2]{1, 100}, 2),
+        new TF_Operation_Wrapper("StatefulPartitionedCall", 2, new int[2]{1, 100}, 2),
+        new TF_Operation_Wrapper("StatefulPartitionedCall", 1, new int[3]{1, 100, 4}, 3)};
+    TF_SavedModel *tfModel = new TF_SavedModel("ssd_mobilenet_v2_320x320/saved_model", "serve", 4, in, dataSize, inputOpNames, outputOpNames);
 
     int ret = 0;
     tfModel->loadModel();
@@ -240,10 +244,24 @@ int main()
         return ret;
     }
 
-    for (int i = 0; i < outputOpNames.size(); i++)
+    float threshold = 0.5f;
+    int validIndex = 0;
+    for (validIndex = 0; validIndex < 100; validIndex++)
+        if (outputOpNames[1]->output[validIndex] < threshold)
+            break;
+
+    printf("===========Result=============\n");
+    printf("Number of detections: %d\n", validIndex);
+    for (int i = 0; i < validIndex; i++)
     {
-        printf("[Output %d] Result:%.2f\n", outputOpNames[i].output);
+        printf("[Object %d]\n", i);
+        printf("Class:%s\n", COCO_CLASSES[(int)outputOpNames[2]->output[i] - 1]);
+        printf("Box: %f, %f, %f, %f\n", outputOpNames[3]->output[i * 4], outputOpNames[3]->output[i * 4 + 1], outputOpNames[3]->output[i * 4 + 2], outputOpNames[3]->output[i * 4 + 3]);
+        cv::rectangle(img, cv::Point(outputOpNames[3]->output[i * 4 + 1] * INPUT_WIDTH, outputOpNames[3]->output[i * 4] * INPUT_HEIGHT), cv::Point(outputOpNames[3]->output[i * 4 + 3] * INPUT_WIDTH, outputOpNames[3]->output[i * 4 + 2] * INPUT_HEIGHT), cv::Scalar(255, 0, 0), 1, cv::LineTypes::LINE_8, 0);
+        printf("\n");
     }
+
+    cvPreview(img);
 }
 #endif
 
