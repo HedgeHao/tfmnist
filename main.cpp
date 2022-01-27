@@ -252,12 +252,15 @@ int main()
 
     printf("===========Result=============\n");
     printf("Number of detections: %d\n", validIndex);
+    const int displayWidth = 900, displayHeight = 900;
+    cv::resize(img, img, cv::Size(900, 900));
     for (int i = 0; i < validIndex; i++)
     {
         printf("[Object %d]\n", i);
         printf("Class:%s\n", COCO_CLASSES[(int)outputOpNames[2]->output[i] - 1]);
         printf("Box: %f, %f, %f, %f\n", outputOpNames[3]->output[i * 4], outputOpNames[3]->output[i * 4 + 1], outputOpNames[3]->output[i * 4 + 2], outputOpNames[3]->output[i * 4 + 3]);
-        cv::rectangle(img, cv::Point(outputOpNames[3]->output[i * 4 + 1] * INPUT_WIDTH, outputOpNames[3]->output[i * 4] * INPUT_HEIGHT), cv::Point(outputOpNames[3]->output[i * 4 + 3] * INPUT_WIDTH, outputOpNames[3]->output[i * 4 + 2] * INPUT_HEIGHT), cv::Scalar(255, 0, 0), 1, cv::LineTypes::LINE_8, 0);
+        cv::rectangle(img, cv::Point(outputOpNames[3]->output[i * 4 + 1] * displayWidth, outputOpNames[3]->output[i * 4] * displayHeight), cv::Point(outputOpNames[3]->output[i * 4 + 3] * displayWidth, outputOpNames[3]->output[i * 4 + 2] * displayHeight), cv::Scalar(255, 0, 0), 1, cv::LineTypes::LINE_8, 0);
+        cv::putText(img, COCO_CLASSES[(int)outputOpNames[2]->output[i] - 1], cv::Point(outputOpNames[3]->output[i * 4 + 1] * displayWidth, outputOpNames[3]->output[i * 4] * displayHeight - 10), cv::FONT_HERSHEY_DUPLEX, 1.0, CV_RGB(118, 185, 0), 2);
         printf("\n");
     }
 
